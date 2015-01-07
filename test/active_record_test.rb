@@ -227,7 +227,7 @@ class ActiveRecordTest < Test::Unit::TestCase
     o.save!
     
     @dumper.dump o
-        
+
     assert_equal 3, objects.size
     
     # last state is resolved by Order belongs_to and is dumped first
@@ -257,15 +257,48 @@ class ActiveRecordTest < Test::Unit::TestCase
     
     assert_equal 3, objects.size
     
+    # make more than one object to wait for referenced object
+    objects[1], objects[2] = objects[2], objects[1]
+    
     # restore dump
     objects.each { |type, id, attrs, obj| @loader.feed type, id, attrs }
-  
+
     assert_equal 1, Order.all.count
     assert_equal 2, State.all.count
     # all states correctly linked to order?
     assert_equal false, State.all.map {|s| s.order == Order.first}.include?(false)
     # order linked to existing last_state?
     assert_equal true, State.all.include?(Order.first.last_state)
+  end
+  
+  def test_dump_and_load_with_overridden_load_replicant_method_if_association_cycle
+    objects = []
+    @dumper.listen { |type, id, attrs, obj| objects << [type, id, attrs, obj] }
+    
+    (class << State; self end).class_eval do
+      define_method(:load_replicant) do |type, id, attrs|
+        super type, id, attrs
+      end
+    end
+    
+    Order.replicate_associations :states
+    o = Order.create! :name => 'beer'
+    s1 = State.create! :name => 'ordered', :order => o
+    s2 = State.create! :name => 'paid', :order => o
+    o.last_state = s2
+    o.save!
+    
+    @dumper.dump o
+    
+    # destroy objects
+    State.delete_all
+    Order.delete_all
+    
+    # restore dump
+    objects.each { |type, id, attrs, obj| @loader.feed type, id, attrs }
+      
+    assert_equal 1, Order.all.count
+    assert_equal 2, State.all.count
   end
 
   if ActiveRecord::VERSION::STRING[0, 3] > '2.2'

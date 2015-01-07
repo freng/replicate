@@ -16,7 +16,7 @@ module Replicate
 
     def initialize
       @keymap = Hash.new { |hash,k| hash[k] = {} }
-      @wait   = Hash.new { |hash,k| hash[k] = [] }
+      @wait   = Hash.new { |hash,k| hash[k] = Hash.new { |hash2,k2| hash2[k2] = [] } }
       @stats  = Hash.new { |hash,k| hash[k] = 0 }
       super
     end
@@ -73,13 +73,13 @@ module Replicate
     # Returns the new object instance.
     def load(type, id, attributes, local_id = nil)
       model_class = constantize(type)
+      if not local_id.nil? and model_class.method(:load_replicant).arity != -4
+        warn "cannot reload #{type}(#{id}) since #{type}#load_replicant overriden and does not provide reload functionality"
+        return
+      end
       translate_ids type, id, attributes
       begin
-        if not local_id.nil?
-          new_id, instance = model_class.load_replicant(type, id, attributes, local_id)
-        else
-          new_id, instance = model_class.load_replicant(type, id, attributes)
-        end
+        new_id, instance = model_class.load_replicant(*([type, id, attributes, local_id].compact))
       rescue => boom
         warn "error: loading #{type} #{id} #{boom.class} #{boom}"
         raise
@@ -106,9 +106,9 @@ module Replicate
             if local_id = @keymap[referenced_type][remote_id]
               local_id
             else
-              @wait[referenced_type][remote_id] = [type, id, attributes.clone()]
+              @wait[referenced_type][remote_id] << [type, id, attributes.clone()]
               warn "warn: #{referenced_type}(#{remote_id}) not in keymap, " +
-                   "referenced by #{type}(#{id})##{key}, added to wait hash"
+                   "referenced by #{type}(#{id})##{key}, added to wait list"
             end
           end
         if value.is_a?(Array)
@@ -129,9 +129,11 @@ module Replicate
         c = c.superclass
       end
       if not @wait[type][remote_id].nil?
-        waiting_type, waiting_id, waiting_attributes = @wait[type][remote_id]
+        @wait[type][remote_id].each do |waiting_object|
+          waiting_type, waiting_id, waiting_attributes = waiting_object
+          load(waiting_type, waiting_id, waiting_attributes, @keymap[waiting_type][waiting_id])
+        end
         @wait[type].delete(remote_id)
-        load(waiting_type, waiting_id, waiting_attributes, @keymap[waiting_type][waiting_id])
       end 
     end
 
