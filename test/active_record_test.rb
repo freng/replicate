@@ -16,6 +16,7 @@ require 'replicate'
 dbfile = File.expand_path('../db', __FILE__)
 File.unlink dbfile if File.exist?(dbfile)
 ActiveRecord::Base.establish_connection(:adapter => "sqlite3", :database => dbfile)
+require 'test_after_commit'
 
 # load schema
 ActiveRecord::Migration.verbose = false
@@ -54,6 +55,8 @@ ActiveRecord::Schema.define do
     t.string  "notable_type"
   end
   
+  create_table "namespaced", :force => true
+    
   create_table "orders", :force => true do |t|
     t.string  "name"
     t.integer "last_state_id"
@@ -97,6 +100,10 @@ end
 
 class Note < ActiveRecord::Base
   belongs_to :notable, :polymorphic => true
+end
+
+class User::Namespaced < ActiveRecord::Base
+  self.table_name = "namespaced"
 end
 
 class Order < ActiveRecord::Base
@@ -467,6 +474,33 @@ class ActiveRecordTest < Test::Unit::TestCase
     assert_equal nil, attrs['notable_id']
   end
 
+  def test_dumps_polymorphic_namespaced_associations
+    objects = []
+    @dumper.listen { |type, id, attrs, obj| objects << [type, id, attrs, obj] }
+
+    note = Note.create! :notable => User::Namespaced.create!
+    @dumper.dump note
+
+    assert_equal 2, objects.size
+
+    type, id, attrs, obj = objects.shift
+    assert_equal 'User::Namespaced', type
+
+    type, id, attrs, obj = objects.shift
+    assert_equal 'Note', type
+  end
+
+  def test_skips_belongs_to_information_if_omitted
+    objects = []
+    @dumper.listen { |type, id, attrs, obj| objects << [type, id, attrs, obj] }
+
+    Profile.replicate_omit_attributes :user
+    @dumper.dump @rtomayko.profile
+
+    assert_equal 1, objects.size
+    type, id, attrs, obj = objects.shift
+    assert_equal @rtomayko.profile.user_id, attrs["user_id"]
+  end
 
   def test_loading_everything
     objects = []
@@ -602,6 +636,9 @@ class ActiveRecordTest < Test::Unit::TestCase
     # note when a record is saved with callbacks
     callbacks = false
     User.class_eval { after_save { callbacks = true } }
+    User.class_eval { after_create { callbacks = true } }
+    User.class_eval { after_update { callbacks = true } }
+    User.class_eval { after_commit { callbacks = true } }
 
     # check our assumptions
     user = User.create(:login => 'defunkt')

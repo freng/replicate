@@ -8,7 +8,10 @@ ENV['GEM_HOME'] = "#{vendor_dir}/#{ruby_version}"
 
 desc "Install gem dependencies for development"
 task :setup => 'setup:latest' do
-  verbose(false) { gem_install 'sqlite3' }
+  verbose(false) do
+    gem_install 'sqlite3'
+    gem_install 'test_after_commit'
+  end
 end
 
 desc "Run tests"
@@ -27,7 +30,7 @@ end
 # supported activerecord gem versions
 AR_VERSIONS = []
 AR_VERSIONS.concat %w[2.2.3 2.3.5] if RUBY_VERSION < '1.9'
-AR_VERSIONS.concat %w[2.3.14 3.0.10 3.1.0]
+AR_VERSIONS.concat %w[2.3.14 3.0.10 3.1.0 3.2.0]
 
 desc "Run unit tests under all supported AR versions"
 task 'test:all' => 'setup:all' do

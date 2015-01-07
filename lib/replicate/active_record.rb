@@ -51,6 +51,7 @@ module Replicate
 
         omitted_attributes.each { |omit| attributes.delete(omit.to_s) }
         self.class.reflect_on_all_associations(:belongs_to).each do |reflection|
+          next if omitted_attributes.include?(reflection.name)
           if info = replicate_reflection_info(reflection)
             if replicant_id = info[:replicant_id]
               foreign_key = info[:foreign_key].to_s
@@ -83,7 +84,7 @@ module Replicate
             end
           return if reference_class.nil?
 
-          klass = Kernel.const_get(reference_class)
+          klass = reference_class.constantize
           primary_key = klass.primary_key
           foreign_key = "#{reflection.name}_id"
         else
@@ -300,13 +301,14 @@ module Replicate
       # they've been disabled on an object.
       def replicate_disable_callbacks(instance)
         if ::ActiveRecord::VERSION::MAJOR >= 3
-          # AR 3.1.x
-          def instance.run_callbacks(*args); yield; end
+          # AR 3.1.x, 3.2.x
+          def instance.run_callbacks(*args); yield if block_given?; end
 
           # AR 3.0.x
           def instance._run_save_callbacks(*args); yield; end
           def instance._run_create_callbacks(*args); yield; end
           def instance._run_update_callbacks(*args); yield; end
+          def instance._run_commit_callbacks(*args); yield; end
         else
           # AR 2.x
           def instance.callback(*args)
